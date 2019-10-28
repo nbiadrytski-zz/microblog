@@ -1,2 +1,2 @@
 # microblog
-Flask microblog app
+Python Flask microblog app
