@@ -1,28 +1,15 @@
-"""
-Routes are the different URLs that the app implements.
-Handlers for the app routes are view functions.
-View functions are mapped to one or more route URLs,
-so that Flask knows what logic to execute when a client requests a given URL.
-
-When browser requests any route URL,
-Flask is going to invoke rott_name() func
-And pass the return value back to the browser as a response.
-"""
-from flask import (
-    render_template,
-    flash,
-    redirect,
-    url_for
-)
-
-from app import app
-from app.forms import LoginForm
+from flask import render_template, flash, redirect, url_for, request
+from flask_login import login_user, logout_user, current_user, login_required
+from werkzeug.urls import url_parse
+from app import app, db
+from app.forms import LoginForm, RegistrationForm
+from app.models import User
 
 
 @app.route('/')
 @app.route('/index')
+@login_required
 def index():
-    user = {'username': 'Mikalai'}
     posts = [
         {
             'author': {'username': 'John'},
@@ -33,23 +20,43 @@ def index():
             'body': 'The Avengers movie was so cool!'
         }
     ]
-    return render_template('index.html', title='Home', user=user, posts=posts)
+    return render_template('index.html', title='Home', posts=posts)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    form = LoginForm()
-    # validate_on_submit() returns False
-    # when browser sends GET request to receive web page with the form.
-    # When browser sends the POST request as a result of the user pressing the submit button
-    # form.validate_on_submit() is going to gather all the data,
-    # run all validators attached to fields, and if everything is ok it will return True
-    if form.validate_on_submit():
-        # flash() stores the message which are rendered by get_flashed_messages() in template
-        flash(f'Login requested for user {form.username.data}, '  # show a message to the user
-              f'remember_me={form.remember_me.data}')
-        # url_for() generates URLs using its internal mapping of URLs to view functions names
-        # redirect() instructs the client web browser to automatically navigate to a different page,
-        # given as an argument
+    if current_user.is_authenticated:
         return redirect(url_for('index'))
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user is None or not user.check_password(form.password.data):
+            flash('Invalid username or password')
+            return redirect(url_for('login'))
+        login_user(user, remember=form.remember_me.data)
+        next_page = request.args.get('next')
+        if not next_page or url_parse(next_page).netloc != '':
+            next_page = url_for('index')
+        return redirect(next_page)
     return render_template('login.html', title='Sign In', form=form)
+
+
+@app.route('/logout')
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        user = User(username=form.username.data, email=form.email.data)
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.commit()
+        flash('Congratulations, you are now a registered user!')
+        return redirect(url_for('login'))
+    return render_template('register.html', title='Register', form=form)
